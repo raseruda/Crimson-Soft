@@ -1,4 +1,4 @@
-name: Build Crimson Soft (winmm.dll)
+name: Build Crimson Soft (pdh.dll & winmm.dll)
 
 on:
   push:
@@ -21,27 +21,36 @@ jobs:
         with:
           arch: x64
 
-      - name: Build winmm.dll
+      - name: Build pdh.dll and winmm.dll
         shell: cmd
         run: |
           mkdir build
+          rc /nologo /fo build\pdh.res src\pdh.rc
+          ml64 /nologo /c /Fo build\pdh_forwards.obj src\pdh_forwards.asm
+          cl /nologo /O2 /EHsc /std:c++17 /W3 /LD /Isrc src\pdh_mod.cpp src\pdh_exports.cpp build\pdh_forwards.obj build\pdh.res user32.lib gdi32.lib comctl32.lib /Fe:build\pdh.dll /Fo:build\ /link /DEF:src\pdh.def
           rc /nologo /fo build\winmm.res src\winmm.rc
           ml64 /nologo /c /Fo build\winmm_forwards.obj src\winmm_forwards.asm
           cl /nologo /O2 /EHsc /std:c++17 /W3 /LD /Isrc src\winmm_mod.cpp src\winmm_exports.cpp build\winmm_forwards.obj build\winmm.res user32.lib gdi32.lib comctl32.lib /Fe:build\winmm.dll /Fo:build\ /link /DEF:src\winmm.def
 
-      - name: Package ZIP & SHA256
+      - name: Package ZIPs & SHA256
         shell: pwsh
         run: |
-          $hash = (Get-FileHash build\winmm.dll -Algorithm SHA256).Hash
-          "SHA256 (winmm.dll): $hash" | Out-File build\SHA256.txt -Encoding utf8
-          Compress-Archive -Path build\winmm.dll, README.md, LICENSE -DestinationPath CrimsonSoft-v1.0.0.zip -Force
+          $tag = if ($env:GITHUB_REF_NAME -match '^v') { $env:GITHUB_REF_NAME } else { "v1.0.1" }
+          $pdhHash = (Get-FileHash build\pdh.dll -Algorithm SHA256).Hash
+          $winmmHash = (Get-FileHash build\winmm.dll -Algorithm SHA256).Hash
+          @(
+            "SHA256 (pdh.dll):   $pdhHash"
+            "SHA256 (winmm.dll): $winmmHash"
+          ) | Out-File build\SHA256.txt -Encoding utf8
+          Compress-Archive -Path build\pdh.dll, README.md, LICENSE -DestinationPath "CrimsonSoft-${tag}-pdh.zip" -Force
+          Compress-Archive -Path build\winmm.dll, README.md, LICENSE -DestinationPath "CrimsonSoft-${tag}-winmm.zip" -Force
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CrimsonSoft-winmm-dll
+          name: CrimsonSoft-DLLs
           path: |
-            CrimsonSoft-v1.0.0.zip
+            CrimsonSoft-*.zip
             build\SHA256.txt
 
       - name: Create GitHub Release on Tag
@@ -49,6 +58,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            CrimsonSoft-v1.0.0.zip
+            CrimsonSoft-*.zip
             build\SHA256.txt
           generate_release_notes: true
